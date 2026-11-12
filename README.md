@@ -129,7 +129,13 @@ Or with custom hyperparameters:
 python experiments/run_experiments.py --utility 0.5 --iters 100 --lr 0.4
 ```
 
-### 3. Running Automated Tests
+### 3. Running Multi-Seed Cross-Validation & Utility Sweep Curve
+Execute the 5-seed cross-validation and incentive stress-test across $u \in [0.1, 1.0]$:
+```bash
+python experiments/run_robustness_sweep.py --utility 0.5 --iters 100 --lr 0.4
+```
+
+### 4. Running Automated Tests
 Execute the entire test suite using `pytest`:
 ```bash
 python -m pytest tests -v
@@ -178,14 +184,44 @@ Evaluated on $11,250$ holdout loan applications with utility payoff $u = 0.5$:
 
 ---
 
+## 📊 Multi-Seed Cross-Validation & Statistical Significance Benchmark
+
+To eliminate split variance and establish statistical reproducibility, models were evaluated across **5 repeated stratified splits** ($42, 101, 2024, 7, 99$), with independently sampled hidden true costs $\Sigma^* \in \mathcal{C}$ per fold:
+
+| Metric | Naive Baseline (Mean ± Std) | Strategic Classifier (Mean ± Std) | Statistical Significance / Effect |
+| :--- | :---: | :---: | :--- |
+| **Truthful Accuracy (Exp 1)** | 89.60% ± 0.30% | 87.99% ± 0.22% | Baseline leads by +1.60% on clean data |
+| **Manipulated Accuracy (Exp 2)** | 86.94% ± 0.60% | **88.36% ± 0.16%** | **Strategic outperforms Baseline by +1.42%** |
+| **Accuracy Degradation (Exp 1 $\to$ 2)** | **+2.66% ± 0.47%** | **-0.36% ± 0.17%** | **Strategic suffers minimal degradation** |
+| **Truthful FPR (Exp 1)** | 6.00% ± 0.26% | 3.86% ± 0.23% | Strategic initiates with lower FPR |
+| **Manipulated FPR (Exp 2)** | **13.70% ± 0.90%** | **5.66% ± 0.32%** | **Baseline FPR surges dramatically!** |
+| **FPR Surge ($\Delta$ FPR)** | **+7.70% ± 0.74%** | **+1.80% ± 0.14%** | **$p = 4.54 \times 10^{-5}$ (Paired $t$-test: Statistically Significant!)** |
+| **Gaming Applicants** | **1,048 ± 80** | **356 ± 24** | **66.0% reduction in gaming** |
+
+---
+
+## 📈 Incentive Stress-Test: Utility Sweep Curve ($u \in [0.1, 1.0]$)
+
+| Utility $u$ | Baseline FPR (%) | Strategic FPR (%) | Baseline Acc (%) | Strategic Acc (%) | Baseline Gaming (%) | Strategic Gaming (%) |
+| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
+| 0.10 | 7.28% ± 0.52% | 4.19% ± 0.24% | 89.40% ± 0.45% | 88.12% ± 0.23% | 1.8% | 0.6% |
+| 0.20 | 8.80% ± 0.53% | 4.53% ± 0.22% | 88.98% ± 0.41% | 88.19% ± 0.22% | 3.7% | 1.2% |
+| 0.30 | 10.32% ± 0.64% | 4.91% ± 0.20% | 88.50% ± 0.46% | 88.20% ± 0.19% | 5.6% | 1.8% |
+| 0.50 | 13.70% ± 0.90% | 5.66% ± 0.32% | 86.94% ± 0.60% | 88.36% ± 0.16% | 9.3% | 3.2% |
+| 0.80 | 19.09% ± 1.49% | 6.96% ± 0.30% | 83.91% ± 1.03% | 88.25% ± 0.14% | 14.7% | 5.1% |
+| 1.00 | **22.47% ± 1.55%** | **7.85% ± 0.29%** | **81.82% ± 1.09%** | **88.12% ± 0.26%** | **17.8%** | **6.3%** |
+
+---
+
 ## 📈 Generated Reports & Visualizations
 
 Running the pipeline automatically saves evaluation artifacts in `reports/`:
-- **`reports/evaluation_report.md`**: Detailed quantitative markdown report.
-- **`reports/experiment_results.json`**: Machine-readable JSON metrics for benchmarking.
-- **`reports/figures/fpr_comparison.png`**: High-resolution chart showing FPR surge under manipulation.
-- **`reports/figures/accuracy_comparison.png`**: Chart showing accuracy preservation.
-- **`reports/figures/training_loss.png`**: Subgradient optimization loss convergence curve.
+- **`reports/robustness_sweep_report.md`**: Academic markdown report with paired $t$-tests and sweeps.
+- **`reports/robustness_sweep_results.json`**: Machine-readable JSON metrics.
+- **`reports/figures/multiseed_cv_comparison.png`**: Cross-validation error bars for Accuracy and FPR.
+- **`reports/figures/utility_sweep_fpr.png`**: FPR trajectory as applicant utility grows.
+- **`reports/figures/utility_sweep_accuracy.png`**: Performance crossover curve for Accuracy.
+- **`reports/figures/utility_sweep_movers.png`**: Percentage of gaming applicants vs. utility.
 
 ---
 

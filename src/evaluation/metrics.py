@@ -34,12 +34,18 @@ def calculate_metrics(y_true: np.ndarray, y_pred: np.ndarray) -> Dict[str, float
 
     fpr = float(fp / (fp + tn)) if (fp + tn) > 0 else 0.0
     tpr = float(tp / (tp + fn)) if (tp + fn) > 0 else 0.0
+    fnr = float(fn / (tp + fn)) if (tp + fn) > 0 else 0.0
     precision = float(tp / (tp + fp)) if (tp + fp) > 0 else 0.0
+    f1 = float(2.0 * precision * tpr / (precision + tpr)) if (precision + tpr) > 0 else 0.0
+    balanced_acc = float(0.5 * (tpr + (1.0 - fpr)))
 
     return {
         'accuracy': acc,
+        'balanced_accuracy': balanced_acc,
+        'f1': f1,
         'fpr': fpr,
         'tpr': tpr,
+        'fnr': fnr,
         'precision': precision,
         'tp': tp,
         'tn': tn,
@@ -102,17 +108,23 @@ def generate_markdown_report(
         f"| **Truthful FPR (Exp 1)** | {m_base_exp1['fpr']*100:.2f}% | {m_strat_exp1['fpr']*100:.2f}% | Strategic initiates with lower FPR |",
         f"| **Manipulated FPR (Exp 2)** | **{m_base_exp2['fpr']*100:.2f}%** | **{m_strat_exp2['fpr']*100:.2f}%** | **Baseline FPR surges dramatically!** |",
         f"| **FPR Surge (Delta FPR)** | **{base_fpr_inc:+.2f}%** | **{strat_fpr_inc:+.2f}%** | **Strategic is significantly more resistant** |",
+        f"| **Truthful False Negatives (FN count)** | {m_base_exp1['fn']:.0f} ({m_base_exp1['fnr']*100:.2f}% FNR) | {m_strat_exp1['fn']:.0f} ({m_strat_exp1['fnr']*100:.2f}% FNR) | Conservative boundary increases initial FN |",
+        f"| **Manipulated False Negatives (FN count)** | {m_base_exp2['fn']:.0f} ({m_base_exp2['fnr']*100:.2f}% FNR) | {m_strat_exp2['fn']:.0f} ({m_strat_exp2['fnr']*100:.2f}% FNR) | Gaming Tax: qualified applicants denied |",
         f"| **Gaming Applicants** | **{moved_base_count} applicants** | **{moved_strat_count} applicants** | **{reduction_pct:.1f}% reduction in gaming** |",
         "",
         "---",
         "",
-        "## 3. Detailed Takeaways",
+        "## 3. Detailed Takeaways & Social Implications (Gaming Tax)",
         "",
-        "1. **Vulnerability of Standard Learning**:",
+        "1. **Institutional Robustness (Vulnerability of Standard Learning)**:",
         f"   The standard Logistic Regression model exhibits catastrophic failure under strategic behavior. Its False Positive Rate increases from {m_base_exp1['fpr']*100:.2f}% to {m_base_exp2['fpr']*100:.2f}% (+{base_fpr_inc:.2f}% surge), because it relies heavily on easy-to-manipulate features.",
         "",
-        "2. **Minimax Robustness via Algorithm 3**:",
+        "2. **Minimax Defense via Algorithm 3**:",
         f"   The strategic classifier de-sensitizes low-cost dimensions by anticipating the worst-case cost matrix in C. Only {moved_strat_count} applicants could afford to game it (compared to {moved_base_count} for the baseline), keeping FPR at {m_strat_exp2['fpr']*100:.2f}% while preserving {m_strat_exp2['accuracy']*100:.2f}% accuracy.",
+        "",
+        "3. **The 'Gaming Tax' on Qualified Borrowers (Social Cost)**:",
+        f"   To protect the lender against fraud, the strategic model adopts a more conservative boundary, resulting in a higher False Negative count ({m_strat_exp1['fn']:.0f} vs {m_base_exp1['fn']:.0f} in Exp 1).",
+        "   Qualified borrowers who look borderline are denied unless they exert costly manipulation effort. For disadvantaged applicants with high personal modification costs, this creates an unfair barrier ('Gaming Tax', Milli et al., 2019).",
         ""
     ]
     report = "\n".join(lines)

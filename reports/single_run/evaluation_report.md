@@ -24,14 +24,20 @@
 | **Truthful FPR (Exp 1)** | 5.62% | 2.77% | Strategic initiates with lower FPR |
 | **Manipulated FPR (Exp 2)** | **12.80%** | **4.25%** | **Baseline FPR surges dramatically!** |
 | **FPR Surge (Delta FPR)** | **+7.18%** | **+1.49%** | **Strategic is significantly more resistant** |
+| **Truthful False Negatives (FN count)** | 636 (25.44% FNR) | 1039 (41.56% FNR) | Conservative boundary increases initial FN |
+| **Manipulated False Negatives (FN count)** | 274 (10.96% FNR) | 837 (33.48% FNR) | Gaming Tax: qualified applicants denied |
 | **Gaming Applicants** | **990 applicants** | **332 applicants** | **66.5% reduction in gaming** |
 
 ---
 
-## 3. Detailed Takeaways
+## 3. Detailed Takeaways & Social Implications (Gaming Tax)
 
-1. **Vulnerability of Standard Learning**:
+1. **Institutional Robustness (Vulnerability of Standard Learning)**:
    The standard Logistic Regression model exhibits catastrophic failure under strategic behavior. Its False Positive Rate increases from 5.62% to 12.80% (+7.18% surge), because it relies heavily on easy-to-manipulate features.
 
-2. **Minimax Robustness via Algorithm 3**:
+2. **Minimax Defense via Algorithm 3**:
    The strategic classifier de-sensitizes low-cost dimensions by anticipating the worst-case cost matrix in C. Only 332 applicants could afford to game it (compared to 990 for the baseline), keeping FPR at 4.25% while preserving 89.25% accuracy.
+
+3. **The 'Gaming Tax' on Qualified Borrowers (Social Cost)**:
+   To protect the lender against fraud, the strategic model adopts a more conservative boundary, resulting in a higher False Negative count (1039 vs 636 in Exp 1).
+   Qualified borrowers who look borderline are denied unless they exert costly manipulation effort. For disadvantaged applicants with high personal modification costs, this creates an unfair barrier ('Gaming Tax', Milli et al., 2019).
