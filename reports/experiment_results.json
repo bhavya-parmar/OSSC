@@ -1,0 +1,61 @@
+{
+    "utility_u": 0.5,
+    "n_iter": 1000,
+    "learning_rate": 0.4,
+    "experiment_1_truthful": {
+        "baseline": {
+            "accuracy": 0.8997333333333334,
+            "fpr": 0.056228571428571426,
+            "tpr": 0.7456,
+            "precision": 0.7911714770797963,
+            "tp": 1864.0,
+            "tn": 8258.0,
+            "fp": 492.0,
+            "fn": 636.0,
+            "n_samples": 11250.0
+        },
+        "strategic": {
+            "accuracy": 0.8861333333333333,
+            "fpr": 0.027657142857142856,
+            "tpr": 0.5844,
+            "precision": 0.8578978273634762,
+            "tp": 1461.0,
+            "tn": 8508.0,
+            "fp": 242.0,
+            "fn": 1039.0,
+            "n_samples": 11250.0
+        }
+    },
+    "experiment_2_manipulated": {
+        "baseline": {
+            "accuracy": 0.8760888888888889,
+            "fpr": 0.128,
+            "tpr": 0.8904,
+            "precision": 0.6652719665271967,
+            "tp": 2226.0,
+            "tn": 7630.0,
+            "fp": 1120.0,
+            "fn": 274.0,
+            "n_samples": 11250.0
+        },
+        "strategic": {
+            "accuracy": 0.8925333333333333,
+            "fpr": 0.04251428571428571,
+            "tpr": 0.6652,
+            "precision": 0.8171990171990172,
+            "tp": 1663.0,
+            "tn": 8378.0,
+            "fp": 372.0,
+            "fn": 837.0,
+            "n_samples": 11250.0
+        },
+        "moved_baseline": 990,
+        "moved_strategic": 332
+    },
+    "comparisons": {
+        "baseline_accuracy_drop": 2.364444444444447,
+        "strategic_accuracy_drop": -0.6399999999999961,
+        "baseline_fpr_surge": 7.177142857142857,
+        "strategic_fpr_surge": 1.4857142857142858
+    }
+}
