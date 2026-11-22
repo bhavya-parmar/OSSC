@@ -1,0 +1,502 @@
+\documentclass[10pt, letterpaper]{article}
+
+% ==============================================================================
+% Packages & Formatting Setup
+% ==============================================================================
+\usepackage[margin=0.75in]{geometry}
+\usepackage{times}
+\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\usepackage{booktabs,tabularx,multirow}
+\usepackage{graphicx}
+\usepackage{float}
+\usepackage{algorithm}
+\usepackage{algpseudocode}
+\usepackage{microtype}
+\usepackage{xcolor}
+\usepackage{caption}
+\usepackage{subcaption}
+\usepackage{enumitem}
+\usepackage[sort&compress,numbers]{natbib}
+\usepackage[pagebackref=false,breaklinks=true,colorlinks=true,linkcolor=blue!70!black,citecolor=blue!70!black,urlcolor=blue!70!black]{hyperref}
+
+% Configure multi-path graphic search (works from root and inside OSSC)
+\graphicspath{{reports/figures/}{OSSC/reports/figures/}}
+
+% Mathematical notation
+\newcommand{\R}{\mathbb{R}}
+\newcommand{\E}{\mathbb{E}}
+\newcommand{\C}{\mathcal{C}}
+\newcommand{\B}{\mathcal{B}}
+\newcommand{\X}{\mathcal{X}}
+\newcommand{\Y}{\mathcal{Y}}
+\newcommand{\D}{\mathcal{D}}
+\newcommand{\sign}{\text{sign}}
+\newcommand{\diag}{\text{diag}}
+\newcommand{\argmin}{\mathop{\mathrm{arg\,min}}}
+\newcommand{\argmax}{\mathop{\mathrm{arg\,max}}}
+\newcommand{\Rshinge}{R_{\text{s-hinge}}}
+\newcommand{\Rshingehat}{\hat{R}_{\text{s-hinge}}}
+\newcommand{\Rzeroone}{R_{0\text{-}1}}
+
+\date{}
+
+\begin{document}
+
+\title{\textbf{\Large Empirical Study of One-Shot Strategic Classification Under Unknown Costs}}
+
+\author{
+  \textbf{Use-case Implementation Report}\\
+  CS620: Incentives in Machine Learning\\
+  \\
+  \textbf{Bhavya Parmar}\\
+  Roll no. 23110059\\
+  Dept. of Computer Science \& Engineering\\
+  Indian Institute of Technology Gandhinagar\\
+  \texttt{bhavya.parmar@iitgn.ac.in}
+}
+
+\maketitle
+
+% ==============================================================================
+% Abstract
+% ==============================================================================
+\begin{abstract}
+When machine learning models are deployed to make high-stakes decisions like loan approvals, individuals naturally adapt their profiles to game the system. Most existing strategic classification algorithms assume the institution either knows the exact manipulation cost function or can run multi-round online trials to learn it. In real-world lending, however, institutions must make a \emph{one-shot commitment} to a single policy, and borrower manipulation costs are inherently uncertain. In this project, we implement and empirically investigate the minimax framework of Rosenfeld (ICML 2024). We focus our study on real-world credit loan data ($45{,}000$ applications, $d=22$ features). Across a 5-seed cross-validation study, we demonstrate that standard classifiers suffer a statistically significant False Positive Rate (FPR) surge from $6.00\%$ to $13.70\%$, whereas the strategic classifier confines the surge to $4.80\%$ and delivers better post-manipulation accuracy ($88.97\%$ vs. $86.94\%$). Through extensive utility sweeps, cost scenario stress-tests, and uncertainty diameter scaling, we confirm theoretical predictions while uncovering a crucial societal dilemma: the \emph{Gaming Tax}, where defensive thresholding significantly increases the wrongful rejection of qualified non-gaming applicants ($10.82\% \to 32.84\%$, $p = 1.68 \times 10^{-8}$).
+\end{abstract}
+
+% ==============================================================================
+% 1. Introduction
+% ==============================================================================
+\section{Introduction}
+\label{sec:intro}
+
+Standard machine learning assumes that test data arrives from a fixed, stationary distribution. However, in applications such as credit scoring, university admissions, and insurance pricing, decision subjects are self-interested, rational economic agents \cite{hardt2016strategic}. When applicants learn which features maximize their odds of loan approval, they modify their observable attributes (e.g., opening new credit lines or temporarily shifting reported debt). If a bank deploys a standard classifier trained via Empirical Risk Minimization (ERM), this strategic manipulation causes an endogenous distribution shift, leading to unexpected credit defaults and substantial financial loss \cite{perdomo2020performative}.
+
+To address this challenge, prior literature primarily studied two settings:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Known Costs:} The classifier assumes full knowledge of the agent's cost function $c(x, x')$ \cite{hardt2016strategic, levanon2021strategic}. In reality, human effort and financial manipulation friction vary widely across individuals and cannot be precisely known.
+    \item \textbf{Online Repeated Rounds:} The institution deploys models over successive rounds, observes empirical gaming responses, and updates its classifier via online exploration \cite{dong2018strategic, lin2023strategic}.
+\end{enumerate}
+
+In high-stakes domains like retail lending, however, online exploration is impossible. Regulatory frameworks (such as fair credit laws) prohibit banks from intentionally deploying vulnerable or unstable underwriting models to ``probe'' how applicants react. Instead, institutions face a \textbf{one-shot commitment}: they must deploy a single classifier whose robustness guarantees hold against any cost function within a plausible uncertainty set.
+
+\paragraph{Project Focus.} This report presents an accessible, code-grounded empirical study of the one-shot minimax framework introduced by \citet{rosenfeld2024oneshot}. Using a production-grade Python pipeline (\texttt{OSSC}), we explore:
+\begin{itemize}[leftmargin=*]
+    \item How vulnerable standard classifiers truly are under real-world credit lending dynamics.
+    \item How the minimax classifier maintains accuracy and prevents false approvals across diverse gaming intensities and cost scenarios.
+    \item How uncertainty set diameter governs model shrinkage.
+    \item The unintended societal consequence of minimax robustness: the \emph{``Gaming Tax''} imposed on honest, non-gaming applicants.
+\end{itemize}
+
+% ==============================================================================
+% 2. Brief Theoretical Primer
+% ==============================================================================
+\section{Relevant Theory}
+\label{sec:theory}
+
+In this section, we summarize the mathematical concepts and algorithmic procedures directly implemented in our codebase.
+
+\subsection{Agent Strategic Best-Response}
+We consider a linear decision boundary $h_\beta(x) = \sign(\beta^\top x)$, where $y = +1$ represents loan approval and $y = -1$ represents denial. An unapproved applicant with features $x$ seeks to achieve approval ($\beta^\top x' \ge 0$) to gain a payoff utility $u > 0$, while incurring a manipulation cost $c(x, x')$.
+
+Following \citet{rosenfeld2024oneshot}, we model cost via a Mahalanobis metric parameterized by a diagonal matrix $\Sigma = \diag(\sigma_1, \dots, \sigma_d) \succ 0$:
+\begin{equation}
+    c_\Sigma(x, x') = \frac{1}{2} (x' - x)^\top \Sigma (x' - x) = \frac{1}{2} \sum_{i=1}^d \sigma_i (x'_i - x_i)^2.
+    \label{eq:cost}
+\end{equation}
+Each entry $\sigma_i$ quantifies the friction of modifying feature $i$. Under quadratic costs, an applicant solves a constrained quadratic program. The minimal cost required to reach the decision boundary $\beta^\top x' = 0$ is:
+\begin{equation}
+    \text{Cost}^*(x) = \frac{(\beta^\top x)^2}{2 \|\beta\|_{*,\Sigma}^2}, \quad \text{where} \quad \|\beta\|_{*,\Sigma} = \sqrt{\sum_{i=1}^d \frac{\beta_i^2}{\sigma_i}}.
+\end{equation}
+Here, $\|\beta\|_{*,\Sigma}$ is the dual norm induced by $\Sigma$. An unapproved applicant manipulates if and only if their net utility is positive:
+\begin{equation}
+    u - \text{Cost}^*(x) > 0 \iff -\beta^\top x < \sqrt{2u} \|\beta\|_{*,\Sigma}.
+\end{equation}
+Defining $u_* := \sqrt{2u}$, the agent's manipulated feature vector is:
+\begin{equation}
+    x(\beta) = \begin{cases}
+        x + \frac{u_*}{\|\beta\|_{*,\Sigma}} \Sigma^{-1} \beta, & \text{if } y = -1 \text{ and } \beta^\top x \in [-u_* \|\beta\|_{*,\Sigma}, 0), \\
+        x, & \text{otherwise}.
+    \end{cases}
+    \label{eq:movement}
+\end{equation}
+Thus, strategic behavior acts as an outward shift of the effective acceptance boundary by exactly $u_* \|\beta\|_{*,\Sigma}$.
+
+\subsection{Strategic Hinge Loss and Uncertainty Set}
+To optimize against strategic manipulation, the paper uses the \emph{strategic hinge loss} as a convex upper bound on 0-1 error:
+\begin{equation}
+    \Rshinge^\Sigma(\beta) = \E_{(x,y)} \left[ \max\left\{0, 1 - y\left(\beta^\top x + u_* \|\beta\|_{*,\Sigma} \mathbf{1}_{\{y = -1\}}\right)\right\} \right].
+    \label{eq:hinge}
+\end{equation}
+Because the true cost matrix $\Sigma^*$ is unknown to the lender, the learner specifies an uncertainty set $\C$ defined by coordinate-wise lower and upper bounds:
+\begin{equation}
+    \C = \left\{ \Sigma = \diag(\sigma_1, \dots, \sigma_d) \;\middle|\; \sigma_i \in [\sigma_i^\ell, \sigma_i^u] \right\}.
+\end{equation}
+The learner seeks to find a classifier $\beta$ that minimizes the worst-case loss over all candidate cost matrices:
+\begin{equation}
+    \min_\beta \; \max_{\Sigma \in \C} \; \Rshinge^\Sigma(\beta).
+    \label{eq:minimax}
+\end{equation}
+
+\subsection{Algorithmic Realization: Dual Norm Regularization and Pseudocode}
+Directly solving \eqref{eq:minimax} is challenging because the strategic hinge loss is non-convex in $\beta$ and the inner maximization over $\Sigma \in \C$ is non-concave. \citet{rosenfeld2024oneshot} resolve these obstacles through two algorithmic innovations:
+
+\paragraph{1. Dual Norm Regularization for Convexity.} Standard $\ell_2$ regularization ($\lambda \|\beta\|_2^2$) fails because restoring convexity requires $\lambda \ge \max_{\Sigma \in \C} \|\Sigma^{-1}\|_2$, causing severe over-regularization. Adding the \emph{dual norm} $\lambda u_* \|\beta\|_{*,\Sigma}$ guarantees convexity for any $\lambda \ge 1$ without destroying feature sensitivity.
+
+\paragraph{2. The \textsc{MaxLossCost} Breakpoint Sweep (Algorithm~\ref{alg:maxlosscost}).} For a fixed classifier $\beta$, the empirical risk depends on $\Sigma$ solely through the scalar dual norm $k = \|\beta\|_{*,\Sigma} \in [k_{\min}, k_{\max}]$. By evaluating sample breakpoints $v_i = y_i(1 - y_i \beta^\top x_i) / u_*$ and sorting them, the global maximum can be evaluated in exact piecewise-linear steps in $\mathcal{O}(nd + n\log n)$ time.
+
+\begin{algorithm}[H]
+\caption{\textsc{MaxLossCost} Breakpoint Sweep \cite{rosenfeld2024oneshot}}
+\label{alg:maxlosscost}
+\begin{algorithmic}[1]
+\Require Training dataset $\D = \{(x_i, y_i)\}_{i=1}^n$, Classifier $\beta$, Uncertainty Set $\C$, Utility upper bound $u_*$, Regularization parameter $\lambda \ge 1$.
+\State Compute scalar dual norm bounds: $k_{\min} \leftarrow \sqrt{\sum_{i=1}^d \beta_i^2 / \sigma_i^u}$ and $k_{\max} \leftarrow \sqrt{\sum_{i=1}^d \beta_i^2 / \sigma_i^\ell}$.
+\State Compute individual hinge breakpoints: $v_i \leftarrow y_i(1 - y_i \beta^\top x_i) / u_*$ for all $i \in [n]$.
+\State Sort training indices $j_1, \dots, j_n$ in ascending order of breakpoints: $v_{j_1} \le v_{j_2} \le \dots \le v_{j_n}$.
+\State Initialize search scalar $k \leftarrow k_{\min}$, objective value $r \leftarrow \Rshingehat(\beta; u_* k) + \lambda u_* k$, tracking variables $r_{\max} \leftarrow r$, $k^* \leftarrow k$.
+\State Find first breakpoint index strictly above $k_{\min}$: $m \leftarrow \min \{ p : v_{j_p} > k_{\min} \}$.
+\State Initialize count of active negative samples: $c_{-1} \leftarrow |\{ p \ge m : y_{j_p} = -1 \}|$.
+\For{$p = m$ to $n$}
+    \State Set next segment boundary: $k' \leftarrow \min\{ v_{j_p}, \; k_{\max} \}$.
+    \State Update piecewise linear risk: $r \leftarrow r + u_* (k' - k) \cdot \left[ \lambda - \frac{c_{-1}}{n} \right]$.
+    \State Advance scalar position: $k \leftarrow k'$.
+    \If{$r > r_{\max}$}
+        \State $r_{\max} \leftarrow r$, \quad $k^* \leftarrow k$.
+    \EndIf
+    \If{$k \ge k_{\max}$} \textbf{break} \EndIf
+    \If{$y_{j_p} == -1$} $c_{-1} \leftarrow c_{-1} - 1$ \EndIf
+\EndFor
+\State Reconstruct diagonal matrix $\Sigma^* = \diag(\sigma_1^*, \dots, \sigma_d^*) \in \C$ satisfying $\sqrt{\sum_{i=1}^d \beta_i^2 / \sigma_i^*} = k^*$ via greedy coordinate assignment.
+\State \Return Worst-case cost matrix $\Sigma^* \in \C$.
+\end{algorithmic}
+\end{algorithm}
+
+\paragraph{3. Full-Batch Subgradient Optimization (Algorithm~\ref{alg:subgradient}).} Equipped with \textsc{MaxLossCost}, Danskin's theorem allows the outer minimization to be solved via subgradient descent. The subgradient is evaluated at the worst-case cost matrix $\Sigma_t^*$, scaling with step size $\eta_t = \frac{B}{L\sqrt{T}}$ and converging at a rate of $\tilde{\mathcal{O}}(T^{-1/2})$.
+
+\begin{algorithm}[H]
+\caption{Full-Batch Subgradient Descent on Regularized Strategic Risk \cite{rosenfeld2024oneshot}}
+\label{alg:subgradient}
+\begin{algorithmic}[1]
+\Require Dataset $\D$, Number of iterations $T$, Uncertainty Set $\C$, Utility bound $u_*$, Regularization parameter $\lambda \ge 1$, Step size schedule $\eta_t = \frac{B}{L\sqrt{T}}$.
+\State Initialize weight vector $\beta_1 \leftarrow \mathbf{0}$.
+\State Compute coordinate-wise lower bound matrix: $\Sigma_{\min} \leftarrow \diag(\sigma_1^\ell, \dots, \sigma_d^\ell)$.
+\For{$t = 1$ to $T$}
+    \State Compute worst-case cost matrix: $\Sigma_t^* \leftarrow \textsc{MaxLossCost}(\D, \beta_t, \C, u_*, \lambda)$.
+    \State Identify active hinge loss samples: $\mathcal{A}_t \leftarrow \{ i \in [n] : y_i (\beta_t^\top x_i + u_* \|\beta_t\|_{*,\Sigma_t^*} \mathbf{1}_{\{y_i = -1\}}) < 1 \}$.
+    \State Extract active negative samples: $\mathcal{A}_t^- \leftarrow \{ i \in \mathcal{A}_t : y_i = -1 \}$.
+    \State Compute subgradient:
+    \State \quad $g_t \leftarrow -\frac{1}{n} \sum_{i \in \mathcal{A}_t} y_i x_i + \left( \lambda + \frac{|\mathcal{A}_t^-|}{n} \right) u_* \frac{(\Sigma_t^*)^{-1} \beta_t}{\|\beta_t\|_{*,\Sigma_t^*}}$.
+    \State Update model weights: $\beta_{t+1} \leftarrow \beta_t - \eta_t \Sigma_{\min} g_t$.
+    \State Optional: Project $\beta_{t+1}$ onto bounded norm ball $\B$.
+\EndFor
+\State \Return Optimal classifier $\hat{\beta} \leftarrow \argmin_{\beta_t, t \in [T]} \max_{\Sigma \in \C} \left[ \Rshingehat^\Sigma(\beta_t) + \lambda u_* \|\beta_t\|_{*,\Sigma} \right]$.
+\end{algorithmic}
+\end{algorithm}
+
+% ==============================================================================
+% 3. Experimental Setup
+% ==============================================================================
+\section{Experimental Setup}
+\label{sec:setup}
+
+\paragraph{Dataset \& Preprocessing.} We evaluate the models on the  loan dataset ($N = 45{,}000$ instances), sourced from Kaggle. The dataset contains 8 numerical features (e.g., annual income, credit score, interest rate, employment experience) and 5 categorical features (e.g., loan intent, home ownership, education level). After one-hot encoding categorical variables, we obtain $d = 22$ features. Feature scaling via \texttt{StandardScaler} is mandatory so that coordinate costs in \eqref{eq:cost} are dimensionally consistent. The target label indicates loan approval ($y = +1$, prevalence $22.22\%$) versus denial ($y = -1$).
+
+\paragraph{Evaluation Protocol.} We use a stratified $75/25$ train-test split ($N_{\text{train}} = 33{,}750$, $N_{\text{test}} = 11{,}250$). We benchmark two models:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Naive Baseline:} A standard linear classifier trained with unshifted hinge loss (ignoring strategic manipulation).
+    \item \textbf{Strategic Classifier:} Minimax classifier trained via dual-norm regularized subgradient descent with \textsc{MaxLossCost}.
+\end{itemize}
+Both models are evaluated under two regimes:
+\begin{itemize}[leftmargin=*]
+    \item \textbf{Experiment 1 (Truthful):} Evaluated on unmanipulated test profiles before agents observe the model.
+    \item \textbf{Experiment 2 (Manipulated):} Evaluated post-deployment, where rational applicants strategically perturb their profiles according to \eqref{eq:movement} under Nature's hidden true cost matrix $\Sigma^*$.
+\end{itemize}
+
+% ==============================================================================
+% 4. Experimental Results and Observations
+% ==============================================================================
+\section{Experimental Results \& Observations}
+\label{sec:results}
+
+% ------------------------------------------------------------------------------
+% Pillar 1
+% ------------------------------------------------------------------------------
+\subsection{Multi-Seed Cross-Validation & Statistical Robustness}
+\label{sec:pillar1}
+
+To ensure results are statistically reproducible, we run a 5-seed cross-validation experiment (seeds 42, 123, 456, 789, 2024), where each fold samples an independent true cost matrix $\Sigma^* \in \C$. Table~\ref{tab:cv_results} reports the quantitative summary across all 5 seeds, and Figure~\ref{fig:cv_bars} visualizes the performance comparison directly alongside the findings.
+
+\begin{table}[H]
+\centering
+\small
+\caption{\textit{\small{\textbf{Multi-Seed Cross-Validation Benchmark (Mean $\pm$ Std across 5 Seeds, $N_{\text{test}} = 11{,}250$).}}}}
+\label{tab:cv_results}
+\begin{tabular}{lcc}
+\toprule
+\textbf{Evaluation Metric} & \textbf{Naive Baseline (Mean $\pm$ Std)} & \textbf{Strategic Classifier (Mean $\pm$ Std)} \\
+\midrule
+Truthful Accuracy (Exp 1) & $89.60\% \pm 0.30\%$ & $88.46\% \pm 0.11\%$ \\
+\textbf{Manipulated Accuracy (Exp 2)} & $86.94\% \pm 0.60\%$ & $\mathbf{88.97\% \pm 0.13\%}$ \\
+Accuracy Drop (Exp 1 $\to$ Exp 2) & $+2.66\% \pm 0.47\%$ & $\mathbf{-0.51\% \pm 0.07\%}$ \\
+\midrule
+Truthful FPR (Exp 1) & $6.00\% \pm 0.26\%$ & $3.12\% \pm 0.25\%$ \\
+\textbf{Manipulated FPR (Exp 2)} & $\mathbf{13.70\% \pm 0.90\%}$ & $\mathbf{4.80\% \pm 0.20\%}$ \\
+\textbf{FPR Surge ($\Delta\text{FPR}$)} & $\mathbf{+7.70\% \pm 0.74\%}$ & $\mathbf{+1.68\% \pm 0.17\%}$ \\
+\midrule
+Truthful FNR (Exp 1) & $25.80\% \pm 0.90\%$ & $41.01\% \pm 0.82\%$ \\
+\textbf{Manipulated FNR (Exp 2)} & $10.82\% \pm 0.78\%$ & $\mathbf{32.84\% \pm 0.65\%}$ \\
+False Negatives Count (Exp 2) & $270 \pm 20$ & $821 \pm 16$ \\
+\midrule
+\# Gaming Applicants & $1{,}048 \pm 80$ ($9.3\%$) & $\mathbf{351 \pm 27}$ ($3.1\%$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\linewidth]{figures/multiseed_cv_comparison.png}
+\caption{\textit{\small{\textbf{Multi-Seed Cross-Validation Across 5 Seeds.} (\emph{Left}) False Positive Rate under manipulation. (\emph{Middle}) The False Negative Gaming Tax. (\emph{Right}) Post-manipulation classification accuracy.}}}
+\label{fig:cv_bars}
+\end{figure}
+
+\paragraph{Key Observations:}
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Catastrophic Baseline Vulnerability \& FPR Surge ($p = 4.09 \times 10^{-5}$):} When exposed to strategic manipulation, standard ERM fails catastrophically. The Naive Baseline experiences an alarming False Positive Rate surge of $+7.70\%$ ($6.00\% \to 13.70\%$), admitting an average of $1{,}048$ unqualified borrowers who successfully gamed their features. In contrast, the Strategic Classifier limits the FPR surge to just $+1.68\%$ ($\text{FPR} = 4.80\%$). A paired Student's $t$-test confirms that this difference in susceptibility to fraudulent approvals is highly statistically significant ($t = 19.49, p = 4.09 \times 10^{-5}$).
+    \item \textbf{Accuracy Preservation and Crossover ($p = 9.58 \times 10^{-4}$):} On truthful, unmanipulated data (Exp 1), the baseline achieves slightly higher accuracy ($89.60\%$ vs. $88.46\%$, a $+1.14\%$ margin) because it does not incur defensive margin penalties. However, once agents react strategically (Exp 2), the baseline suffers a severe accuracy drop of $2.66\%$, falling to $86.94\%$. In contrast, the Strategic Classifier experiences virtually zero degradation ($-0.51\%$), maintaining $88.97\%$ post-manipulation accuracy. This yields a statistically significant $+2.03\%$ accuracy advantage over the baseline ($t = 8.71, p = 9.58 \times 10^{-4}$).
+    \item \textbf{The False Negative ``Gaming Tax'' Dilemma ($p = 1.68 \times 10^{-8}$):} While the strategic model successfully defends against false approvals, its outward threshold shift inherently increases the False Negative Rate. On truthful data, the strategic FNR initiates higher ($41.01\%$ vs. $25.80\%$). Under manipulation, the baseline FNR drops to $10.82\%$ as gamed applications shift into the approval region, whereas the strategic model maintains an elevated FNR of $32.84\%$. A paired $t$-test shows this difference is statistically undeniable ($t = 137.39, p = 1.68 \times 10^{-8}$), wrongfully denying credit to an additional $551$ qualified, non-gaming applicants ($821$ rejections vs. $270$).
+    \item \textbf{Substantial Deterrence of Strategic Gaming:} By anticipating optimal perturbations during training, the strategic decision boundary makes manipulation significantly more costly for borderline candidates. The volume of gaming applicants plummets from $1{,}048 \pm 80$ ($9.3\%$ of the applicant pool) under the baseline down to $351 \pm 27$ ($3.1\%$) under the strategic model—achieving an effective $66.5\%$ reduction in gaming activity.
+\end{enumerate}
+
+% ------------------------------------------------------------------------------
+% Pillar 2
+% ------------------------------------------------------------------------------
+\subsection{Incentive Stress-Test: Utility Sweep}
+\label{sec:pillar2}
+
+In real-world credit markets, the incentive to manipulate depends on economic payoff (e.g., lower interest rates or larger loan amounts provide higher utility $u$). To evaluate how classifier resilience scales with payoff, we sweep $u$ from $0.1$ to $1.0$. Table~\ref{tab:utility_sweep} and Figure~\ref{fig:utility_sweep} present the results in-place.
+
+\begin{table}[H]
+\centering
+\small
+\caption{\textit{\small{\textbf{Incentive Stress-Test ($u \in [0.1, 1.0]$).} Tracing applicant movement and error rates as payoff utility scales.}}}
+\label{tab:utility_sweep}
+\begin{tabular}{ccccc}
+\toprule
+\textbf{Utility $u$} & \textbf{Base FPR} & \textbf{Strat FPR} & \textbf{Base Movers} & \textbf{Strat Movers} \\
+\midrule
+$0.10$ & $7.28\%$ & $3.41\%$ & $1.8\%$ ($202$) & $0.6\%$ ($68$) \\
+$0.30$ & $10.32\%$ & $4.06\%$ & $5.6\%$ ($630$) & $1.8\%$ ($203$) \\
+$0.50$ & $13.70\%$ & $4.80\%$ & $9.3\%$ ($1048$) & $3.1\%$ ($351$) \\
+$0.70$ & $17.26\%$ & $5.66\%$ & $12.9\%$ ($1451$) & $4.4\%$ ($495$) \\
+$1.00$ & $\mathbf{22.47\%}$ & $\mathbf{7.08\%}$ & $\mathbf{17.8\%}$ ($2002$) & $\mathbf{6.4\%}$ ($720$) \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=1\linewidth]{figures/utility_sweep_curves.png}
+\caption{\textit{\small{\textbf{Incentive Stress-Test Curves Across $u \in [0.1, 1.0]$.} (\emph{Left}) FPR escalation. (\emph{Middle}) Accuracy trajectory. (\emph{Right}) Fraction of gaming applicants. Shaded ribbons show $95\%$ confidence intervals.}}}
+\label{fig:utility_sweep}
+\end{figure}
+
+\paragraph{Key Observations:}
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Linear Gaming Escalation for Baseline:} As utility scales from $0.1$ to $1.0$, the percentage of gaming applicants facing the baseline increases tenfold from $1.8\%$ to $17.8\%$. This causes baseline FPR to explode from $7.28\%$ to $22.47\%$ and accuracy to plummet to $81.82\%$.
+    \item \textbf{Bounded Strategic Degradation:} In contrast, the Strategic Classifier's defensive margin suppresses gaming to just $6.4\%$ even at $u=1.0$. FPR increases gently from $3.41\%$ to $7.08\%$, while accuracy remains exceptionally stable ($88.59\% \to 88.71\%$).
+\end{enumerate}
+
+% ------------------------------------------------------------------------------
+% Pillar 3
+% ------------------------------------------------------------------------------
+\subsection{Nature Cost Matrix Scenarios}
+\label{sec:pillar3}
+
+Because the lender cannot know which cost matrix Nature will realize at deployment, we stress-test pre-committed classifiers against 4 distinct environmental scenarios within $\C$:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Random Interior:} Average across 10 randomly sampled interior cost matrices $\Sigma^* \in \C$.
+    \item \textbf{Adversarial Worst-Case ($\Sigma_{\min}$):} Lowest possible manipulation friction $\sigma_i = \sigma_i^\ell$ across all coordinates.
+    \item \textbf{Skewed Feature Costs:} Making high-impact loan features (e.g., \texttt{loan\_amnt}) artificially cheap ($\sigma_i = \sigma_i^\ell$) while keeping other coordinates expensive.
+    \item \textbf{Best-Case Friction ($\Sigma_{\max}$):} High friction $\sigma_i = \sigma_i^u$, constraining manipulation.
+\end{enumerate}
+
+\begin{table}[H]
+\centering
+\small
+\caption{\textit{\small{\textbf{Nature Cost Scenarios (5-Seed Average).} Evaluation across adversarial, skewed, and interior cost matrix realizations.}}}
+\label{tab:scenarios}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Nature Cost Scenario} & \textbf{Base FPR} & \textbf{Strat FPR} & \textbf{Base Acc} & \textbf{Strat Acc} \\
+\midrule
+Random Interior ($10 \Sigma^*$) & $13.67\%$ & $\mathbf{4.78\%}$ & $86.98\%$ & $\mathbf{88.95\%}$ \\
+Adversarial Worst ($\Sigma_{\min}$) & $\mathbf{19.65\%}$ & $\mathbf{6.04\%}$ & $83.58\%$ & $\mathbf{88.82\%}$ \\
+Skewed Costs (\texttt{loan\_amnt}) & $\mathbf{18.27\%}$ & $\mathbf{4.32\%}$ & $84.45\%$ & $\mathbf{88.87\%}$ \\
+Best-Case Friction ($\Sigma_{\max}$) & $11.07\%$ & $4.30\%$ & $88.24\%$ & $88.87\%$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.9\linewidth]{figures/cost_scenarios_comparison.png}
+\caption{\textit{\small{\textbf{Performance Across Nature Cost Scenarios.} Strategic classification maintains uniform robustness across diverse cost matrices.}}}
+\label{fig:scenarios}
+\end{figure}
+
+\paragraph{Key Observations:}
+As shown in Table~\ref{tab:scenarios} and Figure~\ref{fig:scenarios}, under the adversarial worst-case ($\Sigma_{\min}$), the naive baseline collapses, admitting an FPR of nearly $20\%$ ($19.65\%$). More importantly, in the \emph{Skewed Costs} regime where only \texttt{loan\_amnt} is cheap, baseline FPR surges to $18.27\%$. The Strategic Classifier automatically down-weights manipulable coordinates during \textsc{MaxLossCost} optimization, holding FPR to $4.32\%$ and maintaining $88.87\%$ accuracy.
+
+% ------------------------------------------------------------------------------
+% Pillar 4
+% ------------------------------------------------------------------------------
+\subsection{Uncertainty Set Diameter Scaling}
+\label{sec:pillar4}
+
+The theoretical analysis in \citet{rosenfeld2024oneshot} predicts that as the uncertainty diameter $D(\C)$ expands, the minimax classifier must become more conservative, driving the norm $\|\beta\|_2$ toward zero. To validate this hypothesis, we scale the uncertainty radius around the nominal cost $\Sigma_0$ from $\pm 10\%$ to $\pm 90\%$:
+\begin{equation}
+    [\sigma_i^\ell, \sigma_i^u] = [\sigma_{0,i}(1 - \rho), \; \sigma_{0,i}(1 + \rho)], \quad \rho \in \{0.1, 0.25, 0.5, 0.75, 0.9\}.
+\end{equation}
+
+\begin{table}[H]
+\centering
+\small
+\caption{\textit{\small{\textbf{Uncertainty Diameter Sweep Across 5 Seeds.} Confirming theoretical weight contraction and model shutdown.}}}
+\label{tab:diameter}
+\begin{tabular}{lcccc}
+\toprule
+\textbf{Regime} & \textbf{Diameter $D(\C)$} & $\|\beta\|_2$ & \textbf{Strat FPR} & \textbf{Strat FNR} \\
+\midrule
+$\pm 10\%$ Radius & $0.3702$ & $2.428 \pm 0.008$ & $6.20\%$ & $28.29\%$ \\
+$\pm 25\%$ Radius & $1.0320$ & $2.324 \pm 0.005$ & $5.61\%$ & $29.97\%$ \\
+$\pm 50\%$ Radius & $3.2250$ & $2.056 \pm 0.007$ & $4.05\%$ & $36.01\%$ \\
+$\pm 75\%$ Radius & $14.2163$ & $1.476 \pm 0.007$ & $0.98\%$ & $62.40\%$ \\
+$\pm 90\%$ Radius & $\mathbf{90.4517}$ & $\mathbf{0.055 \pm 0.001}$ & $\mathbf{0.00\%}$ & $\mathbf{100.00\%}$ \\
+\bottomrule
+\end{tabular}
+\end{table}
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/diameter_sweep_tradeoff.png}
+\caption{\textit{\small{\textbf{Theoretical Diameter Scaling.} Weight vector norm $\|\beta\|_2$ shrinks monotonically while False Negative Gaming Tax escalates.}}}
+\label{fig:diameter}
+\end{figure}
+
+\paragraph{Key Observations:}
+Table~\ref{tab:diameter} and Figure~\ref{fig:diameter} confirm the theory:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Monotonic Parameter Shrinkage:} As diameter $D(\C)$ widens from $0.37$ to $90.45$, the weight norm $\|\beta\|_2$ drops continuously from $2.428$ to $0.055$.
+    \item \textbf{Defensive Model Shutdown:} At $\pm 90\%$ uncertainty ($D(\C) \approx 90$), the uncertainty is so wide that Nature could choose near-zero costs ($\sigma_i^\ell \to 0$). To prevent unbounded false approvals, the minimax solution effectively shuts down the model: $\beta \approx \mathbf{0}$, $\text{FPR} = 0\%$, and $\text{FNR} = 100\%$. This demonstrates that extreme cost ignorance renders strategic classification impractical.
+\end{enumerate}
+
+% ==============================================================================
+% 5. Societal Implications & The Gaming Tax
+% ==============================================================================
+\section{Societal Implications: The ``Gaming Tax''}
+\label{sec:gaming_tax}
+
+While the Strategic Classifier successfully defends the lending institution against fraud, our empirical analysis uncovers a critical societal externality that has received little attention in the theoretical literature.
+
+\subsection{The False Negative Dilemma}
+To shield itself from strategic manipulation, the classifier shifts its boundary outward by $u_* \|\beta\|_{*,\Sigma}$. While this successfully prevents unqualified applicants from gaming their way to approval, it creates collateral damage: \textbf{it wrongfully excludes qualified, honest applicants who cannot afford or choose not to manipulate their profiles.}
+\\
+
+As documented in Table~\ref{tab:cv_results}:
+\begin{itemize}[leftmargin=*]
+    \item Under strategic manipulation, the naive baseline has an FNR of $10.82\%$ ($270$ rejections per fold).
+    \item The strategic classifier has an FNR of \textbf{$32.84\%$ ($821$ rejections per fold)}.
+    \item A paired $t$-test confirms this discrepancy is immense: $t = 137.39, p = 1.68 \times 10^{-8}$.
+\end{itemize}
+
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.8\linewidth]{figures/social_cost_gaming_tax.png}
+\caption{\textit{\small{\textbf{The Social Cost of Robustness.} (\emph{Top}) False Negative Gaming Tax as utility $u$ scales. (\emph{Bottom}) The Pareto Error Trade-off Frontier between False Positives (lender loss) and False Negatives (borrower exclusion).}}}
+\label{fig:gaming_tax}
+\end{figure}
+
+
+
+\subsection{Defining the Gaming Tax}
+We define the \textbf{Gaming Tax} as the excess false negative rate imposed on qualified non-gaming applicants:
+\begin{equation}
+    \text{Gaming Tax} := \text{FNR}_{\text{strategic}} - \text{FNR}_{\text{baseline}} \approx +22.02\%.
+\end{equation}
+In practical lending terms, \textbf{to prevent $700$ fraudulent loan approvals, the bank wrongfully denies credit to $551$ deserving, creditworthy applicants.}
+
+Figure~\ref{fig:gaming_tax} illustrates the Pareto Trade-off Frontier. Lenders face an inescapable trade-off: minimizing institutional default risk (FPR) directly inflates demographic exclusion (FNR). When uncertainty over costs is high, institutional risk aversion exacerbates socio-economic barriers for truthful individuals.
+
+\begin{figure}[H]
+\centering
+\includegraphics[width=0.92\linewidth]{figures/master_summary_dashboard.png}
+\caption{\textit{\small{Comprehensive 6-panel overview synthesizing multi-seed cross-validation, utility sweep curves, cost scenario stress-testing, diameter scaling, gaming tax escalation, and the Pareto error frontier.}}}
+\label{fig:dashboard}
+\end{figure}
+
+% ==============================================================================
+% 6. Discussion and Practical Takeaways
+% ==============================================================================
+\section{Discussion \& Practical Takeaways}
+\label{sec:discussion}
+
+\paragraph{When is One-Shot Strategic Classification Viable?}
+Our empirical findings yield concrete guidelines for deploying strategic classification in real-world policy domains:
+\begin{enumerate}[leftmargin=*]
+    \item \textbf{Moderate Uncertainty Regimes ($\pm 10\%$ to $\pm 50\%$):} The minimax classifier is highly effective. It protects against adversarial cost choices and feature-specific exploitation while preserving high overall accuracy ($>88\%$).
+    \item \textbf{Extreme Uncertainty Regimes ($> \pm 75\%$):} When uncertainty is very high, minimax optimization collapses into extreme risk aversion ($\beta \to 0$), shutting down the service. Institutions must invest in domain research to establish reasonable bounds $[\sigma_i^\ell, \sigma_i^u]$ rather than assuming unconstrained ignorance.
+    \item \textbf{Fairness and Disparate Impact:} The Gaming Tax shows that robustness is not socially neutral. Less affluent applicants often face higher friction to game credit scores (e.g., lacking liquid capital to manipulate revolving debt). Consequently, minimax models disproportionately penalize truthful marginalized borrowers. Future work must incorporate explicit equal opportunity constraints \cite{hardt2016equality} into the minimax formulation.
+\end{enumerate}
+
+% ==============================================================================
+% 7. Conclusion
+% ==============================================================================
+\section{Conclusion}
+\label{sec:conclusion}
+
+In this project, we implemented and rigorously evaluated the ICML 2024 framework for one-shot strategic classification under unknown costs on a real-world lending dataset. Our 5-seed cross-validation confirms that the minimax classifier effectively prevents the catastrophic false positive rate surges that afflict standard models, maintaining uniform accuracy across utility levels and adversarial cost scenarios. Simultaneously, our investigation uncovered the societal \emph{Gaming Tax}, establishing that minimax fraud protection introduces significant borrower exclusion. Balancing institutional security with demographic fairness represents the essential next frontier for strategic machine learning.
+
+% ==============================================================================
+% References
+% ==============================================================================
+\begin{thebibliography}{9}
+
+\bibitem[Dong et~al.(2018)]{dong2018strategic}
+Dong, J., Roth, A., Schutzman, Z., Waggoner, B., and Wu, Z.~S.
+\newblock Strategic classification from revealed preferences.
+\newblock In \emph{ACM Conference on Economics and Computation (EC)}, 2018.
+
+\bibitem[Hardt et~al.(2016{\natexlab{a}})]{hardt2016strategic}
+Hardt, M., Megiddo, N., Papadimitriou, C., and Wootters, M.
+\newblock Strategic classification.
+\newblock In \emph{Innovations in Theoretical Computer Science (ITCS)}, 2016{\natexlab{a}}.
+
+\bibitem[Hardt et~al.(2016{\natexlab{b}})]{hardt2016equality}
+Hardt, M., Price, E., and Srebro, N.
+\newblock Equality of opportunity in supervised learning.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2016{\natexlab{b}}.
+
+\bibitem[Levanon \& Rosenfeld(2021)]{levanon2021strategic}
+Levanon, S. and Rosenfeld, N.
+\newblock Strategic classification made practical.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2021.
+
+\bibitem[Lin \& Zrnic(2023)]{lin2023strategic}
+Lin, H. and Zrnic, T.
+\newblock Strategic classification under unknown response models.
+\newblock In \emph{Advances in Neural Information Processing Systems (NeurIPS)}, 2023.
+
+\bibitem[Perdomo et~al.(2020)]{perdomo2020performative}
+Perdomo, J., Zrnic, T., Mendler-D{\"u}nner, C., and Hardt, M.
+\newblock Performative prediction.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2020.
+
+\bibitem[Rosenfeld \& Rosenfeld(2024)]{rosenfeld2024oneshot}
+\textbf{Rosenfeld, E. and Rosenfeld, N.
+\newblock One-shot strategic classification under unknown costs.
+\newblock In \emph{International Conference on Machine Learning (ICML)}, 2024.}
+
+\end{thebibliography}
+
+\end{document}
