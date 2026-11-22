@@ -1,27 +1,25 @@
 # One-Shot Strategic Classification Under Unknown Costs (ICML 2024)
 
-[![Python 3.9+](https://img.shields.io/badge/python-3.9+-blue.svg)](https://www.python.org/downloads/)
-[![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](https://opensource.org/licenses/MIT)
-[![Code Style: Clean & Modular](https://img.shields.io/badge/code%20style-modular-green.svg)](src/)
-
-A production-level, modular Python implementation of the ICML 2024 paper:
+A Python implementation of the ICML 2024 paper:
 > **"One-Shot Strategic Classification Under Unknown Costs"**  
 > *Nir Rosenfeld, Lee Cohen, and Nir Rosenfeld (ICML 2024)*
 
+CS620: Incentives & ML - Use-case Implementation\
+Submitted by: Bhavya Parmar\
+Roll No.: 23110059
+
 ---
 
-## 📑 Table of Contents
-- [Executive Overview](#-executive-overview)
-- [Modular Architecture & Repository Layout](#-modular-architecture--repository-layout)
+## Table of Contents
+- [Overview](#overview)
+- [Repository Layout](#repository-layout)
 - [Installation & Quickstart](#-installation--quickstart)
-- [Mathematical Formulation & Theory](#-mathematical-formulation--theory)
-- [Experimental Results on Loan Approval Dataset](#-experimental-results-on-loan-approval-dataset)
 - [Generated Reports & Visualizations](#-generated-reports--visualizations)
 - [Automated Unit Test Suite](#-automated-unit-test-suite)
 
 ---
 
-## 📌 Executive Overview
+## Overview
 
 Standard supervised machine learning assumes test data is drawn from a stationary distribution. In high-stakes socio-technical domains (credit lending, college admissions, fraud detection), users are **rational economic agents** who actively manipulate their features to receive favorable predictions:
 $$\Delta^*(x) = \arg\max_{x'} \left\{ \mathbb{I}\{\beta^\top x' + b \ge 0\} \cdot u - c(x, x') \right\}$$
@@ -39,9 +37,8 @@ This repository provides an end-to-end, object-oriented pipeline featuring:
 
 ---
 
-## 🏛 Modular Architecture & Repository Layout
+## Repository Layout
 
-The codebase has been refactored into a production-level, object-oriented package structure under the `OSSC/` repository:
 
 ```
 OSSC/
@@ -79,34 +76,39 @@ OSSC/
 │
 ├── experiments/                       # Experiment pipeline runners
 │   ├── __init__.py
-│   └── run_experiments.py             # CLI runner orchestrating Exp 1 & Exp 2 + artifact generation
+│   ├── run_master_pipeline.py         # Unified 4-pillar experimental engine
+│   └── run_experiments.py             # Single-run prototype (Exp 1 vs Exp 2)
 │
 ├── reports/                           # Output artifacts
 │   ├── figures/                       # High-resolution visualization charts
-│   │   ├── accuracy_comparison.png    # Truthful vs Manipulated Accuracy bar chart
-│   │   ├── fpr_comparison.png         # Truthful vs Manipulated FPR surge bar chart
-│   │   └── training_loss.png          # Subgradient optimization convergence curve
-│   ├── experiment_results.json        # Machine-readable JSON metrics
-│   └── evaluation_report.md           # Formatted markdown summary report
+│   │   ├── master_summary_dashboard.png # Comprehensive 6-panel executive dashboard
+│   │   ├── multiseed_cv_comparison.png# 3-Panel Mean +/- Std Cross-Validation Comparison
+│   │   ├── social_cost_gaming_tax.png # Gaming Tax FNR curve & Pareto Trade-off Frontier
+│   │   ├── utility_sweep_curves.png   # FPR, Accuracy, and Gaming vs utility u
+│   │   ├── cost_scenarios_comparison.png # 4-Panel comparison across Nature cost scenarios
+│   │   └── diameter_sweep_tradeoff.png# Gaming Tax escalation & accuracy vs Diameter D(C)
+│   ├── master_experiment_results.json # Comprehensive JSON metrics across all pillars
+│   └── master_experiment_report.md    # Master academic markdown report
 │
 ├── tests/                             # Comprehensive unit test suite
 │   ├── __init__.py
 │   ├── test_data_loader.py            # Tests for data preprocessing & scaling
-│   ├── test_uncertainty_set.py        # Tests for uncertainty bounds & dual norm calculations
+│   ├── test_uncertainty_set.py        # Tests for uncertainty bounds, dual norms & scenarios
 │   ├── test_max_loss_cost.py          # Verifies sweep matches brute-force grid search (<1e-4)
 │   ├── test_strategic_classifier.py   # Tests scikit-learn compliance & convergence
 │   └── test_strategic_simulator.py    # Tests rational agent movement & boundary crossing
 │
 ├── pyproject.toml                     # Modern package build configuration
 ├── requirements.txt                   # Production dependencies
-├── run.py                             # Root CLI entrypoint
+├── run_all.py                         # Master unified CLI entrypoint (all 4 experimental pillars)
+├── run.py                             # Quick CLI entrypoint (single prototype run)
 ├── strategic_classification.py        # Backwards-compatible import wrapper
 └── README.md                          # Comprehensive project documentation
 ```
 
 ---
 
-## ⚡ Installation & Quickstart
+## Installation & Quickstart
 
 ### 1. Requirements
 Ensure you have Python 3.9+ installed:
@@ -119,20 +121,38 @@ Alternatively, install in editable mode:
 pip install -e .
 ```
 
-### 2. Running the Complete Experiment Pipeline
-From inside the `OSSC/` directory:
+### 2. Master Unified Pipeline (Recommended)
+Run all 4 experimental pillars end-to-end across multiple seeds and utilities in one command:
 ```bash
-python run.py
+python run_all.py
 ```
-Or with custom hyperparameters:
+Or customize parameters:
 ```bash
-python experiments/run_experiments.py --utility 0.5 --iters 100 --lr 0.4
+python run_all.py --utility 0.5 --iters 100 --seeds 42 101 2024 7 99
 ```
 
-### 3. Running Multi-Seed Cross-Validation & Utility Sweep Curve
-Execute the 5-seed cross-validation and incentive stress-test across $u \in [0.1, 1.0]$:
+You can also run specific experimental stages using the `--stage` flag:
+- **Only Cross-Validation & Statistical Significance (Pillar 1)**:
+  ```bash
+  python run_all.py --stage cv
+  ```
+- **Only Utility Sweep Stress-Test (Pillar 2)**:
+  ```bash
+  python run_all.py --stage utility
+  ```
+- **Only Nature Cost Scenarios Across Seeds (Pillar 3)**:
+  ```bash
+  python run_all.py --stage scenarios
+  ```
+- **Only Uncertainty Set Diameter Sweep (Pillar 4)**:
+  ```bash
+  python run_all.py --stage diameter
+  ```
+
+### 3. Quick Single-Run Prototype
+Run a fast 1-second sanity check on a single seed:
 ```bash
-python experiments/run_robustness_sweep.py --utility 0.5 --iters 100 --lr 0.4
+python run.py
 ```
 
 ### 4. Running Automated Tests
@@ -143,89 +163,21 @@ python -m pytest tests -v
 
 ---
 
-## 📐 Mathematical Formulation & Theory
-
-### 1. Strategic Hinge Loss & Dual Norm
-For cost function $c(x, x') = \|\Sigma^{1/2}(x' - x)\|_2$, Lemma 2.3 proves that the maximal increase in an applicant's logit score is:
-$$\Delta \text{score}_{\max} = u^* \|\beta\|_{*,\Sigma} = u^* \|\Sigma^{-1/2} \beta\|_2 = u^* \sqrt{\sum_{i=1}^d \left(\frac{\beta_i}{\sigma_i}\right)^2}$$
-
-The cost-dependent strategic hinge loss (Definition 2.2) is:
-$$\ell_{\text{s-hinge}}^\Sigma(\beta^\top x + b, y) = \max\left\{0, 1 - y\left(\beta^\top x + b + u^* \|\beta\|_{*,\Sigma}\right)\right\}$$
-
-### 2. Dual Norm Regularization (Ensuring Convexity)
-Standard $\ell_2$ regularization fails to prevent non-convexity unless $\lambda \ge \|\Sigma^{-1}\|_2$ (Theorem 4.2). Instead, adding the cost-dependent **Dual Norm Regularizer** guarantees convexity for any cost in $\mathcal{C}$ whenever $\lambda \ge q(y = +1)$ (Proposition 4.3):
-$$\min_{\beta, b} \max_{\Sigma \in \mathcal{C}} \left[ \frac{1}{n} \sum_{i=1}^n \max\left\{0, 1 - y_i\left(\beta^\top x_i + b + u^* \|\Sigma^{-1/2}\beta\|_2\right)\right\} + \lambda u^* \|\Sigma^{-1/2}\beta\|_2 \right]$$
-
-### 3. Fast Inner Maximization (`MAXLOSSCOST`) in $\mathcal{O}(nd + n\ln n)$
-Evaluating baseline scores $v_i = y_i(1 - y_i(\beta^\top x_i + b))$ and sorting gives the breakpoints where individual training points enter or exit positive hinge loss. Sweeping scalar $k \in [\|\beta\|_{\min}^*, \|\beta\|_{\max}^*]$ enables exact piecewise-linear evaluation in $\mathcal{O}(n\ln n)$ time. The maximizing matrix $\hat{\Sigma}$ is recovered analytically coordinate-by-coordinate:
-$$\hat{\sigma}_i = \frac{|\beta_i|}{\left(k_{\max}^2 - \|\hat{\Sigma}_{i=0}^{-1/2} \beta\|_2^2\right)^{1/2}}$$
-
-### 4. Rational Applicant Response Simulation (Test Time)
-An applicant receiving a negative score $\beta^\top x + b < 0$ incurs minimal cost to reach the decision boundary:
-$$\text{Cost}^*(x) = \frac{-(\beta^\top x + b)}{\|\beta\|_{*,\Sigma^*}}$$
-If $\text{Net Utility} = u - \text{Cost}^*(x) > 0$, the applicant moves by optimal displacement:
-$$\Delta^*(x) = \frac{-(\beta^\top x + b) + \epsilon}{\|\beta\|_{*,\Sigma^*}^2} \Sigma^{* -1} \beta$$
-
----
-
-## 📊 Experimental Results on Loan Approval Dataset
-
-Evaluated on $11,250$ holdout loan applications with utility payoff $u = 0.5$:
-
-| Metric | Naive Baseline (Logistic Regression) | Strategic Classifier (Algorithm 3) | Performance / Robustness Impact |
-| :--- | :---: | :---: | :--- |
-| **Truthful Accuracy (Exp 1)** | 89.97% | 87.90% | Baseline +2.07% on clean data |
-| **Manipulated Accuracy (Exp 2)** | 87.61% | **88.39%** | **Strategic outperforms Baseline by +0.78%** |
-| **Accuracy Degradation** | **-2.36%** | **-0.49% (Robust)** | **Strategic suffers 79% less degradation** |
-| **Truthful FPR (Exp 1)** | 5.62% | 3.73% | Strategic initiates with lower FPR |
-| **Manipulated FPR (Exp 2)** | **12.80%** | **5.14%** | **Baseline FPR surges dramatically!** |
-| **FPR Surge ($\Delta$ FPR)** | **+7.18%** | **+1.42%** | **Strategic is 5x more resistant to false approvals** |
-| **Gaming Applicants** | **990 applicants** | **303 applicants** | **69.4% reduction in gaming** |
-
----
-
-## 📊 Multi-Seed Cross-Validation & Statistical Significance Benchmark
-
-To eliminate split variance and establish statistical reproducibility, models were evaluated across **5 repeated stratified splits** ($42, 101, 2024, 7, 99$), with independently sampled hidden true costs $\Sigma^* \in \mathcal{C}$ per fold:
-
-| Metric | Naive Baseline (Mean ± Std) | Strategic Classifier (Mean ± Std) | Statistical Significance / Effect |
-| :--- | :---: | :---: | :--- |
-| **Truthful Accuracy (Exp 1)** | 89.60% ± 0.30% | 87.99% ± 0.22% | Baseline leads by +1.60% on clean data |
-| **Manipulated Accuracy (Exp 2)** | 86.94% ± 0.60% | **88.36% ± 0.16%** | **Strategic outperforms Baseline by +1.42%** |
-| **Accuracy Degradation (Exp 1 $\to$ 2)** | **+2.66% ± 0.47%** | **-0.36% ± 0.17%** | **Strategic suffers minimal degradation** |
-| **Truthful FPR (Exp 1)** | 6.00% ± 0.26% | 3.86% ± 0.23% | Strategic initiates with lower FPR |
-| **Manipulated FPR (Exp 2)** | **13.70% ± 0.90%** | **5.66% ± 0.32%** | **Baseline FPR surges dramatically!** |
-| **FPR Surge ($\Delta$ FPR)** | **+7.70% ± 0.74%** | **+1.80% ± 0.14%** | **$p = 4.54 \times 10^{-5}$ (Paired $t$-test: Statistically Significant!)** |
-| **Gaming Applicants** | **1,048 ± 80** | **356 ± 24** | **66.0% reduction in gaming** |
-
----
-
-## 📈 Incentive Stress-Test: Utility Sweep Curve ($u \in [0.1, 1.0]$)
-
-| Utility $u$ | Baseline FPR (%) | Strategic FPR (%) | Baseline Acc (%) | Strategic Acc (%) | Baseline Gaming (%) | Strategic Gaming (%) |
-| :---: | :---: | :---: | :---: | :---: | :---: | :---: |
-| 0.10 | 7.28% ± 0.52% | 4.19% ± 0.24% | 89.40% ± 0.45% | 88.12% ± 0.23% | 1.8% | 0.6% |
-| 0.20 | 8.80% ± 0.53% | 4.53% ± 0.22% | 88.98% ± 0.41% | 88.19% ± 0.22% | 3.7% | 1.2% |
-| 0.30 | 10.32% ± 0.64% | 4.91% ± 0.20% | 88.50% ± 0.46% | 88.20% ± 0.19% | 5.6% | 1.8% |
-| 0.50 | 13.70% ± 0.90% | 5.66% ± 0.32% | 86.94% ± 0.60% | 88.36% ± 0.16% | 9.3% | 3.2% |
-| 0.80 | 19.09% ± 1.49% | 6.96% ± 0.30% | 83.91% ± 1.03% | 88.25% ± 0.14% | 14.7% | 5.1% |
-| 1.00 | **22.47% ± 1.55%** | **7.85% ± 0.29%** | **81.82% ± 1.09%** | **88.12% ± 0.26%** | **17.8%** | **6.3%** |
-
----
-
-## 📈 Generated Reports & Visualizations
+## Generated Reports & Visualizations
 
 Running the pipeline automatically saves evaluation artifacts in `reports/`:
-- **`reports/robustness_sweep_report.md`**: Academic markdown report with paired $t$-tests and sweeps.
-- **`reports/robustness_sweep_results.json`**: Machine-readable JSON metrics.
-- **`reports/figures/multiseed_cv_comparison.png`**: Cross-validation error bars for Accuracy and FPR.
-- **`reports/figures/utility_sweep_fpr.png`**: FPR trajectory as applicant utility grows.
-- **`reports/figures/utility_sweep_accuracy.png`**: Performance crossover curve for Accuracy.
-- **`reports/figures/utility_sweep_movers.png`**: Percentage of gaming applicants vs. utility.
+- **`reports/master_experiment_report.md`**: Full Markdown report with paired $t$-tests, scenario comparisons, and diameter scaling.
+- **`reports/master_experiment_results.json`**: Machine-readable JSON metrics across all 4 experimental pillars.
+- **`reports/figures/master_summary_dashboard.png`**: 6-panel executive dashboard summarizing all experimental findings.
+- **`reports/figures/multiseed_cv_comparison.png`**: Cross-validation error bars for Accuracy, FPR surge, and FNR Gaming Tax.
+- **`reports/figures/utility_sweep_curves.png`**: 3-panel incentive stress-test across $u \in [0.1, 1.0]$.
+- **`reports/figures/cost_scenarios_comparison.png`**: Multi-panel evaluation across Nature's cost scenarios.
+- **`reports/figures/diameter_sweep_tradeoff.png`**: Theoretical scaling and gaming tax escalation vs. diameter $D(\mathcal{C})$.
+- **`reports/figures/social_cost_gaming_tax.png`**: Gaming Tax FNR curve and Pareto Trade-off Frontier.
 
 ---
 
-## 🧪 Automated Unit Test Suite
+## Automated Unit Test Suite
 
 The test suite in `tests/` tests all components:
 - `test_data_loader.py`: Verifies null checks, categorical encoding, label mapping to $\{-1, +1\}$, and feature scaling.

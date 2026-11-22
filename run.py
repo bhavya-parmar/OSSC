@@ -8,6 +8,10 @@ Usage:
 
 import os
 import sys
+import tempfile
+
+os.environ["MPLCONFIGDIR"] = os.path.join(tempfile.gettempdir(), "mpl_ossc_cache")
+os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
 
 # Ensure repository root is on Python path
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))

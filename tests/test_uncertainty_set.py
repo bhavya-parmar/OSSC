@@ -47,3 +47,39 @@ def test_true_cost_sampling():
     assert np.all(sigma_star > c_set.sigma_min)
     assert np.all(sigma_star < c_set.sigma_max)
 
+
+def test_cost_scenarios_and_diameter():
+    bounds = np.array([[1.0, 3.0], [2.0, 6.0], [0.8, 2.4]])
+    c_set = CostUncertaintySet(bounds)
+
+    # 1. Worst-case cost
+    Sigma_worst, sigma_worst = c_set.get_worst_case_cost()
+    assert np.allclose(sigma_worst, c_set.sigma_min)
+    assert np.allclose(np.diag(Sigma_worst), c_set.sigma_min ** 2)
+
+    # 2. Best-case cost
+    Sigma_best, sigma_best = c_set.get_best_case_cost()
+    assert np.allclose(sigma_best, c_set.sigma_max)
+
+    # 3. Skewed cost (feature 0 cheap, others expensive)
+    Sigma_skew, sigma_skew = c_set.get_skewed_cost(cheap_indices=[0])
+    assert np.isclose(sigma_skew[0], c_set.sigma_min[0])
+    assert np.isclose(sigma_skew[1], c_set.sigma_max[1])
+    assert np.isclose(sigma_skew[2], c_set.sigma_max[2])
+
+    # 4. Multiple interior costs
+    multiple = c_set.sample_multiple_interior_costs(n_samples=5, random_state=42)
+    assert len(multiple) == 5
+    for S_mat, s_vec in multiple:
+        assert c_set.is_valid_cost(s_vec)
+
+    # 5. Theoretical Diameter D(C)
+    d_val = c_set.get_diameter()
+    # Expected max over i of (1/sigma_min^2 - 1/sigma_max^2)
+    # i=0: 1/1 - 1/9 = 8/9 = 0.8888
+    # i=1: 1/4 - 1/36 = 8/36 = 0.2222
+    # i=2: 1/0.64 - 1/5.76 = 1.5625 - 0.1736 = 1.3888
+    assert np.isclose(d_val, (1.0 / 0.8**2) - (1.0 / 2.4**2))
+    assert np.isclose(c_set.diameter, d_val)
+
+

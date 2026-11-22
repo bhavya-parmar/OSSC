@@ -65,3 +65,53 @@ def construct_domain_cost_bounds(feature_names: List[str]) -> CostUncertaintySet
 
     return CostUncertaintySet(np.array(bounds))
 
+
+def construct_scaled_uncertainty_set(
+    feature_names: List[str],
+    uncertainty_pct: float = 0.5,
+    min_sigma_floor: float = 0.1
+) -> CostUncertaintySet:
+    """
+    Constructs an uncertainty set C where interval width is scaled by uncertainty_pct (e.g., +/- 10%, +/- 50%, +/- 90%).
+
+    This directly tests the core theoretical bounds from Theorems 5.2 & 5.3 of Rosenfeld et al. (ICML 2024),
+    where sub-optimality scales with the diameter of C:
+        D(C) = max_i ( 1 / sigma_{i,min}^2 - 1 / sigma_{i,max}^2 )
+
+    Parameters
+    ----------
+    feature_names : List[str]
+        List of all d feature column names.
+    uncertainty_pct : float, default=0.5
+        Uncertainty radius around nominal center:
+        - 0.10 (+/- 10%): High confidence / narrow uncertainty.
+        - 0.50 (+/- 50%): Moderate confidence / baseline uncertainty.
+        - 0.90 (+/- 90%): Very low confidence / wide uncertainty.
+    min_sigma_floor : float, default=0.1
+        Absolute lower floor for sigma_{i,min} to prevent division by zero or negative costs.
+
+    Returns
+    -------
+    CostUncertaintySet
+        The parameterized uncertainty set C with corresponding diameter D.
+    """
+    base_set = construct_domain_cost_bounds(feature_names)
+    scaled_bounds = []
+
+    for i in range(base_set.d):
+        s_min = base_set.sigma_min[i]
+        s_max = base_set.sigma_max[i]
+        center = 0.5 * (s_min + s_max)
+
+        # Apply percentage width
+        new_min = max(min_sigma_floor, center * (1.0 - uncertainty_pct))
+        new_max = center * (1.0 + uncertainty_pct)
+
+        if new_min >= new_max:
+            new_max = new_min + 0.1
+
+        scaled_bounds.append([new_min, new_max])
+
+    return CostUncertaintySet(np.array(scaled_bounds))
+
+

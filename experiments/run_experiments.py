@@ -17,8 +17,15 @@ Executes:
 import os
 import sys
 import argparse
+import tempfile
 from typing import Dict, Any, Optional
+
+os.environ["MPLCONFIGDIR"] = os.path.join(tempfile.gettempdir(), "mpl_ossc_cache")
+os.makedirs(os.environ["MPLCONFIGDIR"], exist_ok=True)
+
 import numpy as np
+import matplotlib
+matplotlib.use("Agg")
 import matplotlib.pyplot as plt
 
 # Ensure src package is importable
@@ -312,7 +319,7 @@ if __name__ == "__main__":
         if os.path.exists(alt):
             args.data = alt
 
-    reports_dir = os.path.join(os.path.abspath(args.reports), "single_run")
+    reports_dir = os.path.abspath(args.reports)
     os.makedirs(reports_dir, exist_ok=True)
 
     run_pipeline(

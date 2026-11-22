@@ -15,7 +15,7 @@ This module formalizes the unknown cost model from Section 2 of Rosenfeld et al.
                       = u* sqrt( sum_{i=1}^d (beta_i / sigma_i)^2 )
 """
 
-from typing import Tuple, Optional, Union
+from typing import Tuple, Optional, Union, List
 import numpy as np
 
 
@@ -115,6 +115,109 @@ class CostUncertaintySet:
         sigma_star = self.sigma_min + alpha * (self.sigma_max - self.sigma_min)
         Sigma_star = np.diag(sigma_star ** 2)
         return Sigma_star, sigma_star
+
+    def sample_multiple_interior_costs(
+        self,
+        n_samples: int = 10,
+        random_state: Optional[int] = 42
+    ) -> List[Tuple[np.ndarray, np.ndarray]]:
+        """
+        Samples N distinct random true cost matrices Sigma* strictly inside C.
+
+        Parameters
+        ----------
+        n_samples : int, default=10
+            Number of cost matrices to generate.
+        random_state : int, optional
+            Base seed for random sampling.
+
+        Returns
+        -------
+        List of (Sigma_star, sigma_star) tuples.
+        """
+        costs = []
+        base_seed = 42 if random_state is None else random_state
+        for i in range(n_samples):
+            cost_mat, cost_vec = self.sample_hidden_true_cost(random_state=base_seed + i * 17)
+            costs.append((cost_mat, cost_vec))
+        return costs
+
+    def get_worst_case_cost(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Returns the Adversarial / Worst-Case Cost Matrix Sigma_min.
+
+        In this scenario, all features have the lowest possible effort cost:
+        sigma_i = sigma_{i,min} for all i.
+        This maximizes the dual norm k_max and maximizes the applicant's ability
+        to manipulate their features across the decision boundary.
+        """
+        sigma_worst = self.sigma_min.copy()
+        Sigma_worst = np.diag(sigma_worst ** 2)
+        return Sigma_worst, sigma_worst
+
+    def get_best_case_cost(self) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Returns the Best-Case Cost Matrix Sigma_max (maximum manipulation friction).
+        sigma_i = sigma_{i,max} for all i.
+        """
+        sigma_best = self.sigma_max.copy()
+        Sigma_best = np.diag(sigma_best ** 2)
+        return Sigma_best, sigma_best
+
+    def get_skewed_cost(
+        self,
+        cheap_indices: Union[List[int], np.ndarray],
+        expensive_indices: Optional[Union[List[int], np.ndarray]] = None
+    ) -> Tuple[np.ndarray, np.ndarray]:
+        """
+        Constructs a Skewed Cost Matrix where specific features are cheap (sigma_min)
+        while others are expensive (sigma_max).
+
+        For example, loan applicants can easily alter requested loan amount (low effort),
+        while income and bureau records remain hard to alter (high effort).
+
+        Parameters
+        ----------
+        cheap_indices : List[int] or np.ndarray
+            Feature coordinate indices to set to sigma_{i,min}.
+        expensive_indices : List[int] or np.ndarray, optional
+            Feature coordinate indices to set to sigma_{i,max}. If None, all coordinates
+            not in cheap_indices are set to sigma_{i,max}.
+
+        Returns
+        -------
+        Sigma_skewed : np.ndarray of shape (d, d)
+        sigma_skewed : np.ndarray of shape (d,)
+        """
+        sigma_skewed = np.zeros(self.d, dtype=float)
+        cheap_set = set(cheap_indices)
+
+        for i in range(self.d):
+            if i in cheap_set:
+                sigma_skewed[i] = self.sigma_min[i]
+            else:
+                sigma_skewed[i] = self.sigma_max[i]
+
+        Sigma_skewed = np.diag(sigma_skewed ** 2)
+        return Sigma_skewed, sigma_skewed
+
+    def get_diameter(self) -> float:
+        """
+        Computes the theoretical diameter metric D(C) from Theorems 5.2 & 5.3 of Rosenfeld et al. (ICML 2024):
+            D = max_{1 <= i <= d} ( 1 / sigma_{i,min}^2 - 1 / sigma_{i,max}^2 )
+
+        Returns
+        -------
+        float
+            The diameter of the cost uncertainty set C.
+        """
+        coord_diameters = (1.0 / (self.sigma_min ** 2)) - (1.0 / (self.sigma_max ** 2))
+        return float(np.max(coord_diameters))
+
+    @property
+    def diameter(self) -> float:
+        """Property shortcut for get_diameter()."""
+        return self.get_diameter()
 
     def is_valid_cost(self, sigma_vec: np.ndarray, tol: float = 1e-6) -> bool:
         """Checks if a candidate cost vector lies within the uncertainty set C."""

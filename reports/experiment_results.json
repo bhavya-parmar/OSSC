@@ -1,6 +1,6 @@
 {
     "utility_u": 0.5,
-    "n_iter": 1000,
+    "n_iter": 100,
     "learning_rate": 0.4,
     "experiment_1_truthful": {
         "baseline": {
@@ -18,17 +18,17 @@
             "n_samples": 11250.0
         },
         "strategic": {
-            "accuracy": 0.8861333333333333,
-            "balanced_accuracy": 0.7783714285714286,
-            "f1": 0.6952177016416845,
-            "fpr": 0.027657142857142856,
-            "tpr": 0.5844,
-            "fnr": 0.4156,
-            "precision": 0.8578978273634762,
-            "tp": 1461.0,
-            "tn": 8508.0,
-            "fp": 242.0,
-            "fn": 1039.0,
+            "accuracy": 0.8790222222222223,
+            "balanced_accuracy": 0.7743714285714285,
+            "f1": 0.6828245164297366,
+            "fpr": 0.03725714285714286,
+            "tpr": 0.586,
+            "fnr": 0.414,
+            "precision": 0.8179787828029034,
+            "tp": 1465.0,
+            "tn": 8424.0,
+            "fp": 326.0,
+            "fn": 1035.0,
             "n_samples": 11250.0
         }
     },
@@ -48,26 +48,26 @@
             "n_samples": 11250.0
         },
         "strategic": {
-            "accuracy": 0.8925333333333333,
-            "balanced_accuracy": 0.8113428571428571,
-            "f1": 0.7334068357221609,
-            "fpr": 0.04251428571428571,
-            "tpr": 0.6652,
-            "fnr": 0.3348,
-            "precision": 0.8171990171990172,
-            "tp": 1663.0,
-            "tn": 8378.0,
-            "fp": 372.0,
-            "fn": 837.0,
+            "accuracy": 0.8839111111111111,
+            "balanced_accuracy": 0.8030857142857143,
+            "f1": 0.715716151501959,
+            "fpr": 0.05142857142857143,
+            "tpr": 0.6576,
+            "fnr": 0.3424,
+            "precision": 0.7851002865329513,
+            "tp": 1644.0,
+            "tn": 8300.0,
+            "fp": 450.0,
+            "fn": 856.0,
             "n_samples": 11250.0
         },
         "moved_baseline": 990,
-        "moved_strategic": 332
+        "moved_strategic": 303
     },
     "comparisons": {
         "baseline_accuracy_drop": 2.364444444444447,
-        "strategic_accuracy_drop": -0.6399999999999961,
+        "strategic_accuracy_drop": -0.48888888888888316,
         "baseline_fpr_surge": 7.177142857142857,
-        "strategic_fpr_surge": 1.4857142857142858
+        "strategic_fpr_surge": 1.417142857142857
     }
 }
